@@ -76,6 +76,7 @@ setup(
         'scipy>=0.14.0, <2.0',
         'sklearn-deap2>=0.2.1, <0.3',
         'tabulate>=0.7.5, <1.0',
+        'six>=1.11.0',
     ],
 
     test_suite='nose.collector',
