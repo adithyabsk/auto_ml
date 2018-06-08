@@ -4,7 +4,7 @@ import math
 from auto_ml import utils
 import pandas as pd
 from sklearn.ensemble import GradientBoostingRegressor, GradientBoostingClassifier
-from sklearn.metrics import mean_squared_error, make_scorer, brier_score_loss, accuracy_score, explained_variance_score, mean_absolute_error, median_absolute_error, r2_score, log_loss, roc_auc_score
+from sklearn.metrics import mean_squared_error, make_scorer, brier_score_loss, accuracy_score, explained_variance_score, mean_absolute_error, median_absolute_error, r2_score, log_loss, roc_auc_score, f1_score
 import numpy as np
 from tabulate import tabulate
 
@@ -203,6 +203,7 @@ scoring_name_function_map = {
     , 'log_loss': log_loss
     , 'roc_auc': roc_auc_score
     , 'brier_score_loss': brier_score_loss
+    , 'f1_score': f1_score
 }
 
 
@@ -290,32 +291,33 @@ class ClassificationScorer(object):
         print('Warning: We have found some values in the predicted probabilities that fall outside the range {0, 1}')
         print('This is likely the result of a model being trained on too little data, or with a bad set of hyperparameters. If you get this warning while doing a hyperparameter search, for instance, you can probably safely ignore it')
         print('We will cap those values at 0 or 1 for the purposes of scoring, but you should be careful to have similar safeguards in place in prod if you use this model')
-        if not isinstance(probas[0], list):
-            probas = [val if str(val) not in bad_vals_as_strings else 0 for val in probas]
-            probas = [min(max(pred, 0), 1) for pred in probas]
-            return probas
-        else:
-            cleaned_probas = []
-            for proba_tuple in probas:
-                cleaned_tuple = []
-                for item in proba_tuple:
-                    if str(item) in bad_vals_as_strings:
-                        item = 0
-                    cleaned_tuple.append(max(min(item, 1), 0))
-                cleaned_probas.append(cleaned_tuple)
-            return cleaned_probas
+        bad_vals_as_strings = np.array([str(float('nan')), str(float('inf')), str(float('-inf')), 'None', 'none', 'NaN', 'NAN', 'nan', 'NULL', 'null', '', 'inf', '-inf', 'np.nan', 'numpy.nan'])
+        probas = np.array(probas)
+        np.place(probas, np.isin(probas.astype(str), bad_vals_as_strings), 0)
+        np.place(probas, probas>1, 1)
+        np.place(probas, probas<0, 0)
 
+        return probas
 
 
     def score(self, estimator, X, y, advanced_scoring=False):
-
         X, y = utils.drop_missing_y_vals(X, y, output_column=None)
 
         if isinstance(estimator, GradientBoostingClassifier):
             X = X.toarray()
 
         predictions = estimator.predict_proba(X)
+        kwargs = {}
 
+        if np.unique(y).size > 2:
+            if self.scoring_method in ['log_loss', 'roc_auc']:
+                y = np.array(y)
+                y_one_hot = np.zeros((y.size, y.max()+1))
+                y_one_hot[np.arange(y.size), y] = 1
+                y = y_one_hot
+            if self.scoring_method in ['f1_score']:
+                predictions = predictions.argmax(axis=1)
+                kwargs['average'] = 'weighted'
 
         if self.scoring_method == 'brier_score_loss':
             # At the moment, Microsoft's LightGBM returns probabilities > 1 and < 0, which can break some scoring functions. So we have to take the max of 1 and the pred, and the min of 0 and the pred.
@@ -323,7 +325,7 @@ class ClassificationScorer(object):
             predictions = probas
 
         try:
-            score = self.scoring_func(y, predictions)
+            score = self.scoring_func(y, predictions, **kwargs)
         except ValueError as e:
             bad_val_indices = []
             for idx, val in enumerate(y):
@@ -341,8 +343,10 @@ class ClassificationScorer(object):
                 predictions = self.clean_probas(predictions)
                 score = self.scoring_func(y, predictions)
 
+        if self.scoring_method in ['rmse', 'median_absolute_error', 'mean_absolute_error', 'log_loss', 'brier_score_loss']:
+            score*=-1
 
         if advanced_scoring:
-            return (-1 * score, predictions)
+            return (score, predictions)
         else:
-            return -1 * score
+            return score
