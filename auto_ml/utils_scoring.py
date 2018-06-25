@@ -291,7 +291,6 @@ class ClassificationScorer(object):
         print('Warning: We have found some values in the predicted probabilities that fall outside the range {0, 1}')
         print('This is likely the result of a model being trained on too little data, or with a bad set of hyperparameters. If you get this warning while doing a hyperparameter search, for instance, you can probably safely ignore it')
         print('We will cap those values at 0 or 1 for the purposes of scoring, but you should be careful to have similar safeguards in place in prod if you use this model')
-        bad_vals_as_strings = np.array([str(float('nan')), str(float('inf')), str(float('-inf')), 'None', 'none', 'NaN', 'NAN', 'nan', 'NULL', 'null', '', 'inf', '-inf', 'np.nan', 'numpy.nan'])
         probas = np.array(probas)
         np.place(probas, np.isin(probas.astype(str), bad_vals_as_strings), 0)
         np.place(probas, probas>1, 1)
@@ -343,10 +342,10 @@ class ClassificationScorer(object):
                 predictions = self.clean_probas(predictions)
                 score = self.scoring_func(y, predictions)
 
-        if self.scoring_method in ['rmse', 'median_absolute_error', 'mean_absolute_error', 'log_loss', 'brier_score_loss']:
-            score*=-1
+        if self.scoring_method in ['accuracy', 'accuracy_score', 'roc_auc', 'f1_score']:
+            score*=-1 # value needs to go up to optimize these
 
         if advanced_scoring:
-            return (score, predictions)
+            return (-1 * score, predictions)
         else:
-            return score
+            return -1 * score
