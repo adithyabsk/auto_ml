@@ -194,6 +194,7 @@ def rmse_func(y, predictions):
 
 scoring_name_function_map = {
     'rmse': rmse_func
+    , 'mean_squared_error': mean_squared_error
     , 'median_absolute_error': median_absolute_error
     , 'r2': r2_score
     , 'r-squared': r2_score
@@ -347,6 +348,6 @@ class ClassificationScorer(object):
             score*=-1 # value needs to go up to optimize these
 
         if advanced_scoring:
-            return (score, predictions)
+            return (-1 * score, predictions)
         else:
-            return score
+            return -1 * score
