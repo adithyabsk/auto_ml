@@ -6,6 +6,7 @@ import os
 import random
 from six import get_method_self, get_method_function
 import sys
+import signal
 import types
 import warnings
 
@@ -58,6 +59,17 @@ try:
 except:
     import copyreg
     copyreg.pickle(types.MethodType, _pickle_method)
+
+HAS_TIMED_OUT = False
+
+def handler(signum, frame):
+    HAS_TIMED_OUT = True
+    stacks = inspect.stack()
+    if 'fit' in [f.function for f in stacks]:
+        print('Time limit exceeded in critical code...')
+        raise SystemExit('Time limit exceeded, sending system exit...')
+    else:
+        print('Time limit exceeded in non critical code')
 
 
 class Predictor(object):
@@ -625,7 +637,10 @@ class Predictor(object):
         return X_df
 
 
-    def train(self, raw_training_data, user_input_func=None, optimize_final_model=None, write_gs_param_results_to_file=True, perform_feature_selection=None, verbose=True, X_test=None, y_test=None, ml_for_analytics=True, take_log_of_y=None, model_names=None, perform_feature_scaling=None, calibrate_final_model=False, _scorer=None, scoring=None, verify_features=False, training_params=None, grid_search_params=None, compare_all_models=False, cv=2, feature_learning=False, fl_data=None, optimize_feature_learning=False, train_uncertainty_model=False, uncertainty_data=None, uncertainty_delta=None, uncertainty_delta_units=None, calibrate_uncertainty=False, uncertainty_calibration_settings=None, uncertainty_calibration_data=None, uncertainty_delta_direction=None, advanced_analytics=None, analytics_config=None, prediction_intervals=None, predict_intervals=None, ensemble_config=None, trained_transformation_pipeline=None, transformed_X=None, transformed_y=None, return_transformation_pipeline=False, X_test_already_transformed=False, skip_feature_responses=None, prediction_interval_params=None):
+    def train(self, raw_training_data, user_input_func=None, optimize_final_model=None, write_gs_param_results_to_file=True, perform_feature_selection=None, verbose=True, X_test=None, y_test=None, ml_for_analytics=True, take_log_of_y=None, model_names=None, perform_feature_scaling=None, calibrate_final_model=False, _scorer=None, scoring=None, verify_features=False, training_params=None, grid_search_params=None, compare_all_models=False, cv=2, feature_learning=False, fl_data=None, optimize_feature_learning=False, train_uncertainty_model=False, uncertainty_data=None, uncertainty_delta=None, uncertainty_delta_units=None, calibrate_uncertainty=False, uncertainty_calibration_settings=None, uncertainty_calibration_data=None, uncertainty_delta_direction=None, advanced_analytics=None, analytics_config=None, prediction_intervals=None, predict_intervals=None, ensemble_config=None, trained_transformation_pipeline=None, transformed_X=None, transformed_y=None, return_transformation_pipeline=False, X_test_already_transformed=False, skip_feature_responses=None, prediction_interval_params=None, max_optimize_time=None):
+        if max_optimize_time:
+            signal.signal(signal.SIGALRM, handler) 
+            signal.alarm(max_optimize_time)
 
         self.set_params_and_defaults(raw_training_data, user_input_func=user_input_func, optimize_final_model=optimize_final_model, write_gs_param_results_to_file=write_gs_param_results_to_file, perform_feature_selection=perform_feature_selection, verbose=verbose, X_test=X_test, y_test=y_test, ml_for_analytics=ml_for_analytics, take_log_of_y=take_log_of_y, model_names=model_names, perform_feature_scaling=perform_feature_scaling, calibrate_final_model=calibrate_final_model, _scorer=_scorer, scoring=scoring, verify_features=verify_features, training_params=training_params, grid_search_params=grid_search_params, compare_all_models=compare_all_models, cv=cv, feature_learning=feature_learning, fl_data=fl_data, optimize_feature_learning=False, train_uncertainty_model=train_uncertainty_model, uncertainty_data=uncertainty_data, uncertainty_delta=uncertainty_delta, uncertainty_delta_units=uncertainty_delta_units, calibrate_uncertainty=calibrate_uncertainty, uncertainty_calibration_settings=uncertainty_calibration_settings, uncertainty_calibration_data=uncertainty_calibration_data, uncertainty_delta_direction=uncertainty_delta_direction, prediction_intervals=prediction_intervals, predict_intervals=predict_intervals, ensemble_config=ensemble_config, trained_transformation_pipeline=trained_transformation_pipeline, transformed_X=transformed_X, transformed_y=transformed_y, return_transformation_pipeline=return_transformation_pipeline, X_test_already_transformed=X_test_already_transformed, skip_feature_responses=skip_feature_responses, prediction_interval_params=prediction_interval_params)
 
@@ -668,6 +683,7 @@ class Predictor(object):
 
         # This is our main logic for how we train the final model
         self.trained_final_model = self.train_ml_estimator(self.model_names, self._scorer, X_df, y)
+        signal.alarm(0)
 
         if self.ensemble_config is not None and len(self.ensemble_config) > 0:
             self._train_ensemble(X_df, y)
@@ -857,7 +873,6 @@ class Predictor(object):
 
 
     def fit_single_pipeline(self, X_df, y, model_name, feature_learning=False, prediction_interval=False):
-
         full_pipeline = self._construct_pipeline(model_name=model_name, feature_learning=feature_learning, prediction_interval=prediction_interval, keep_cat_features=self.transformation_pipeline.keep_cat_features)
         ppl = full_pipeline.named_steps['final_model']
         if self.verbose:
@@ -872,7 +887,10 @@ class Predictor(object):
             start_time = datetime.datetime.now().replace(microsecond=0)
             print(start_time)
 
-        ppl.fit(X_df, y)
+        try:
+            ppl.fit(X_df, y)
+        except:
+            print('Early stopping...')
 
         if self.verbose:
             print('Finished training the pipeline!')
@@ -1191,7 +1209,10 @@ class Predictor(object):
                 print('About to run GridSearchCV on the pipeline for several models to predict ' + self.output_column)
                 # Note that we will only report analytics results on the final model that ultimately gets selected, and trained on the entire dataset
 
-        gs.fit(X_df, y)
+            try:
+                gs.fit(X_df, y)
+            except:
+                print('Early stopping...')
 
         if self.verbose:
             self.print_training_summary(gs)
@@ -1225,7 +1246,7 @@ class Predictor(object):
         return grid_search_params
 
     # When we go to perform hyperparameter optimization, the hyperparameters for a GradientBoosting model will not at all align with the hyperparameters for an SVM. Doing all of that in one giant GSCV would throw errors. So we train each model in it's own grid search.
-    def train_ml_estimator(self, estimator_names, scoring, X_df, y, feature_learning=False, prediction_interval=False):
+    def train_ml_estimator(self, estimator_names, scoring, X_df, y, feature_learning=False, prediction_interval=False, max_optimize_time=None):
 
         if prediction_interval is not False:
             # estimator_names = ['GradientBoostingRegressor']
@@ -1259,7 +1280,8 @@ class Predictor(object):
 
             # If we just have one model, this will obviously be a very simple loop :)
             for model_name in estimator_names:
-
+                if HAS_TIMED_OUT:
+                    break
                 grid_search_params = self.create_gs_params(model_name)
                 # Adding model name to gs params just to help with logging
                 grid_search_params['model'] = [utils_models.get_model_from_name(model_name)]
@@ -1270,21 +1292,25 @@ class Predictor(object):
 
                 all_gs_results.append(gscv_results)
 
-
             # Grab the first one by default
             best_score = all_gs_results[0].best_score_
             best_params = all_gs_results[0].best_params_
             model_name = estimator_names[0]
+            best_estimator_ = all_gs_results[0].best_estimator_
 
             # Iterate through the rest, and see if any are better!
             for idx, result in enumerate(all_gs_results):
                 if result.best_score_ > best_score:
                     best_score = result.best_score_
                     best_params = result.best_params_
+                    best_estimator_ = result.best_estimator_
                     if 'model_name' in best_params:
                         model_name = best_params['model_name']
                     else:
                         model_name = estimator_names[idx]
+
+            if HAS_TIMED_OUT:
+                return best_estimator_
 
             # Now that we've got the best model, train it on quite a few more iterations/epochs/trees if applicable
             cleaned_best_params = {}
@@ -1303,7 +1329,7 @@ class Predictor(object):
 
             self.training_params = best_params
 
-            trained_final_model = self.fit_single_pipeline(X_df, y, model_name, feature_learning=feature_learning, prediction_interval=False)
+            trained_final_model = self.fit_single_pipeline(X_df, y, model_name, feature_learning=feature_learning, prediction_interval=False, max_optimize_time=max_optimize_time)
 
             # Don't report feature_responses (or nearly anything else) if this is just the feature_learning stage
             # That saves a considerable amount of time
