@@ -14,8 +14,6 @@ from sklearn.svm import LinearSVC, LinearSVR
 
 from sklearn.cluster import MiniBatchKMeans
 
-from sklearn.tree import DecisionTreeClassifier
-
 xgb_installed = False
 try:
     from xgboost import XGBClassifier, XGBRegressor
@@ -447,20 +445,9 @@ def get_search_params(model_name):
             'min_samples_leaf': [1, 2, 5, 20, 50, 100],
             'bootstrap': [True, False]
         },
-        'ExtraTreesClassifier': {
-            'max_features': ['auto', 'sqrt', 'log2', None],
-            'min_samples_split': [2, 5, 20, 50, 100],
-            'min_samples_leaf': [1, 2, 5, 20, 50, 100],
-            'bootstrap': [True, False]
-        },
         'AdaBoostRegressor': {
             'base_estimator': [None, LinearRegression(n_jobs=-1)],
             'loss': ['linear','square','exponential']
-        },
-        'AdaBoostClassifier': {
-            'base_estimator': [None, LinearRegression(n_jobs=-1)],
-            'n_estimators': [10, 50, 100, 200],
-            'learning_rate': [0.001, 0.003, 0.01, 0.3]
         },
         'RANSACRegressor': {
             'min_samples': [None, .1, 100, 1000, 10000],

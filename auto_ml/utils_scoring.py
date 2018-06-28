@@ -310,7 +310,7 @@ class ClassificationScorer(object):
         predictions = estimator.predict_proba(X)
         kwargs = {}
 
-        if np.unique(y).size > 2 or predictions.ndim > 1:
+        if np.unique(y).size > 2:
             if self.scoring_method in ['log_loss', 'roc_auc']:
                 y = np.array(y)
                 y_one_hot = np.zeros((y.size, y.max()+1))
